@@ -57,6 +57,10 @@ def test():
     print (feature.shape)
     label = np.load("label.npy")
     print(label.shape)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.imshow(label)
+    plt.show()
     size = np.array([fh, fw])
     model = DCF_conv(size,fc)
     print (model)
@@ -64,7 +68,7 @@ def test():
     label = label[np.newaxis,:,:,np.newaxis]
     model = model.cuda()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    loss_fn = nn.MSELoss(reduce=True, size_average=False)
+    loss_fn = nn.MSELoss(reduce=True, size_average=True)
 
     model.train()
     for batch_idx in range(2000):
