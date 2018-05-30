@@ -177,13 +177,19 @@ if hf % 2 == 0 or wf % 2 == 0:
 hf,wf,cf=np.shape(output)
 print("feature map h ,w, c:",hf,wf,cf)
 #print(np.max(output),np.min(output))
-matrix=np.reshape(output,(hf*wf,cf))
+window_feature = np.zeros(output.shape)
+for i in range(cf):
+    window_feature[:,:,i]  = output[:,:,i] * cos_window
+
+matrix=np.reshape(window_feature,(hf*wf,cf))
 
 #pca = PCA(n_components=num_channels)
-pca = PCA(n_components= 3)          ####################attention!!!111
+pca = PCA(n_components= num_channels)          ####################attention!!!111
 pca.fit(matrix)
 coeff =pca.transform(matrix)
 print("after pca",np.shape(coeff))
+
+#window_feature  =
 
 # img_tmp = np.reshape(coeff,(hf,wf,-1))
 # print(img_tmp.shape)
@@ -198,7 +204,7 @@ output_sigma = target_sz1*output_sigma_factor
 label=gaussian_shaped_labels(output_sigma, l1_patch_num, target_w_h)
 # cv2.imshow("",label)
 # cv2.waitKey(0)
-# np.save("label.npy",label)
+np.save("label.npy",label)
 
 
 # label1=imresize(label,[size(im1,1) size(im1,1)])*255;
@@ -209,3 +215,11 @@ label=gaussian_shaped_labels(output_sigma, l1_patch_num, target_w_h)
 ###########-------------------first frame initialization-----------
 numEpochs=4000
 featurePCA = np.reshape(coeff,(hf,wf,-1))
+np.save("feature.npy",featurePCA)
+
+# import matplotlib.pyplot as plt
+# fig = plt.figure()
+#     # 第一个子图,按照默认配置
+# ax = fig.add_subplot(111)
+# ax.imshow(featurePCA)
+# plt.show()
