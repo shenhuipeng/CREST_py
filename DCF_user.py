@@ -10,7 +10,7 @@ import copy
 import torch.optim as optim
 from torch.autograd import Variable
 import cv2
-
+from time import time
 import matplotlib.pyplot as plt
 
 
@@ -62,11 +62,11 @@ class DCF_conv(nn.Module):
 
 
 def test():
-    feature = np.load("/home/kamata/pshow/CREST_py-master/feature.npy")
+    feature = np.load("./feature.npy")
     (fh, fw, fc)= feature.shape
 
     print (feature.shape)
-    label = np.load("/home/kamata/pshow/CREST_py-master/label.npy")*10
+    label = np.load("./label.npy")*10
     print(label.shape)
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -82,7 +82,7 @@ def test():
     loss_fn = nn.MSELoss(reduce=True, size_average=True)
 
     model.train()
-    for batch_idx in range(1000):
+    for batch_idx in range(300):
         data, target = feature, label
         # print(data.shape)
         data, target = torch.from_numpy(data), torch.from_numpy(target)
@@ -112,13 +112,13 @@ def test():
     #ax.imshow(output)
     #plt.show()
     #fig = plt.figure()
-    test_input = np.roll(feature,20,axis=1)
-    test_input = np.roll(test_input, 20, axis=2)
+    test_input = np.roll(feature,100,axis=1)
+    test_input = np.roll(test_input, 100, axis=2)
     #ax = fig.add_subplot(111)
     #ax.imshow(test_input[0,:,:,:])
     #plt.show()
-    test_label = np.roll(label,20,axis=1)
-    test_label = np.roll(test_label, 20, axis=2)
+    test_label = np.roll(label,100,axis=1)
+    test_label = np.roll(test_label, 100, axis=2)
     data, target = test_input, test_label
 
     data, target = torch.from_numpy(data), torch.from_numpy(target)
@@ -141,4 +141,51 @@ def test():
     ay.imshow(output[0,0, :, :])
     plt.show()
 
-test()
+    
+
+#test()
+
+
+class DCF_layer():
+    def __init__(self,feature_map,label):
+        (fh, fw, fc) = feature_map.shape
+        print("Start init DCF_layer...")
+        t1=time()
+        print("feature map shape:", feature_map.shape)
+        print("label shape:",label.shape)
+        size = np.array([fh, fw])
+        feature_map = feature_map[np.newaxis, :, :, :]
+        label = label[np.newaxis, :, :, np.newaxis]
+
+        self.dcf_model = DCF_conv(size, fc)
+        print(self.dcf_model)
+        self.model = self.dcf_model.cuda()
+        self.optimizer = optim.Adam(self.dcf_model.parameters(), lr=1e-4, weight_decay=1e-6)
+        self.loss_fn = nn.MSELoss(reduce=True, size_average=True)
+
+        self.dcf_model.train()
+
+        data, target = feature_map, label
+        data, target = torch.from_numpy(data), torch.from_numpy(target)
+        # convert BHWC to BCHW
+        data = data.permute(0, 3, 1, 2)
+        target = target.permute(0, 3, 1, 2)
+
+        for batch_idx in range(300):
+
+            data, target = data.float().cuda(), target.float().cuda()
+
+            data, target = Variable(data), Variable(target)
+            self.optimizer.zero_grad()
+            output = self.dcf_model(data)
+
+            loss = self.loss_fn(output, target)  # + 1e-6*output.norm(2)
+            loss.backward()
+            self.optimizer.step()
+            if batch_idx % 100 == 0:
+                print('Train Epoch: {}\tLoss: {:.6f}'.format(batch_idx, loss.item()))
+        output = output.cpu().detach().numpy()
+        t2=time()
+        print("DCF_layer init end")
+        print("init time cost:",(t2-t1)/1000 , "s")
+        

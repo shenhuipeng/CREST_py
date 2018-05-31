@@ -6,6 +6,13 @@ from sklearn.decomposition import PCA
 
 from config_list import config_list
 from VGG13_user import init_vgg13
+from DCF_user import DCF_layer
+import os
+
+
+DATASET_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))+"/dataset"
+print(DATASET_PATH)
+#exit()
 #############################################################
 def get_serach_window_size(target_h_w, scale):
     window_h_w = np.zeros(2).astype("int")
@@ -103,9 +110,9 @@ def gaussian_shaped_labels(sigma, sz,objSize):
 
 
 ################load data############################
-seq_len, gt, img_list = config_list('Dudek','/media/pshow/0EB217730EB21773/VOT_full/CREST-Release-master')
+seq_len, gt, img_list = config_list('Dudek',DATASET_PATH)
 
-num_channels = 64
+num_channels = 3
 output_sigma_factor = 0.1
 cell_size=4
 
@@ -143,10 +150,10 @@ print("patch size:",patch.shape)
 # cv2.waitKey(0)
 
 #patch  = patch.astype("uint8")
-meanImg = np.zeros(patch.shape)
-meanImg[:,:,0] = patch[:,:,0]- np.average(patch[:,:,0])
-meanImg[:,:,1] = patch[:,:,1]- np.average(patch[:,:,1])
-meanImg[:,:,2] = patch[:,:,2]- np.average(patch[:,:,2])
+#meanImg = np.zeros(patch.shape)
+#meanImg[:,:,0] = patch[:,:,0]- np.average(patch[:,:,0])
+#meanImg[:,:,1] = patch[:,:,1]- np.average(patch[:,:,1])
+#meanImg[:,:,2] = patch[:,:,2]- np.average(patch[:,:,2])
 
 # print(meanImg)
 # meanImg  = meanImg.astype("uint8")
@@ -204,7 +211,7 @@ output_sigma = target_sz1*output_sigma_factor
 label=gaussian_shaped_labels(output_sigma, l1_patch_num, target_w_h)
 # cv2.imshow("",label)
 # cv2.waitKey(0)
-np.save("label.npy",label)
+#np.save("label.npy",label)
 
 
 # label1=imresize(label,[size(im1,1) size(im1,1)])*255;
@@ -223,3 +230,21 @@ np.save("feature.npy",featurePCA)
 # ax = fig.add_subplot(111)
 # ax.imshow(featurePCA)
 # plt.show()
+
+dcf_layer = DCF_layer(featurePCA,label)
+
+exit()
+#----------------online prediction------------------
+motion_sigma_factor=0.6
+
+num_update=2          # global
+cur=1
+feat_update = np.zeros((num_update,1))
+label_update = np.zeros((num_update,1))
+target_szU = target_h_w
+for  index in range(1,seq_len):
+    frame = img_list[index]
+    #print(frame.shape)
+    #  im = imresize(im1, scale)   #  if scale!!!!
+
+    patch = get_subwindow(frame, pos_h_w, window_h_w)
