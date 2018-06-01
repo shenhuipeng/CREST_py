@@ -62,8 +62,8 @@ class DCF_conv(nn.Module):
 
 
 def test():
-    feature = np.load("./feature.npy")
-    (fh, fw, fc)= feature.shape
+    feature = np.load("./feature64.npy")
+    fh, fw, fc= feature.shape
 
     print (feature.shape)
     label = np.load("./label.npy")*10
@@ -82,7 +82,7 @@ def test():
     loss_fn = nn.MSELoss(reduce=True, size_average=True)
 
     model.train()
-    for batch_idx in range(300):
+    for batch_idx in range(100):
         data, target = feature, label
         # print(data.shape)
         data, target = torch.from_numpy(data), torch.from_numpy(target)
@@ -103,6 +103,7 @@ def test():
             print('Train Epoch: {}\tLoss: {:.6f}'.format(batch_idx, loss.item()))
     output = output.cpu().detach().numpy()
     output = output[0,0,:,:]
+
     #print(output)
     # cv2.imshow("",output)
     # cv2.waitKey(0)
@@ -148,17 +149,18 @@ def test():
 
 class DCF_layer():
     def __init__(self,feature_map,label):
-        (fh, fw, fc) = feature_map.shape
+        num, fh, fw, fc = feature_map.shape
+        print("##########")
         print("Start init DCF_layer...")
         t1=time()
         print("feature map shape:", feature_map.shape)
         print("label shape:",label.shape)
         size = np.array([fh, fw])
-        feature_map = feature_map[np.newaxis, :, :, :]
-        label = label[np.newaxis, :, :, np.newaxis]
+        #feature_map = feature_map[np.newaxis, :, :, :]
+        label = label[:, :, :, np.newaxis]
 
         self.dcf_model = DCF_conv(size, fc)
-        print(self.dcf_model)
+        #print(self.dcf_model)
         self.model = self.dcf_model.cuda()
         self.optimizer = optim.Adam(self.dcf_model.parameters(), lr=1e-4, weight_decay=1e-6)
         self.loss_fn = nn.MSELoss(reduce=True, size_average=True)
@@ -171,7 +173,7 @@ class DCF_layer():
         data = data.permute(0, 3, 1, 2)
         target = target.permute(0, 3, 1, 2)
 
-        for batch_idx in range(300):
+        for batch_idx in range(1000):
 
             data, target = data.float().cuda(), target.float().cuda()
 
@@ -182,10 +184,34 @@ class DCF_layer():
             loss = self.loss_fn(output, target)  # + 1e-6*output.norm(2)
             loss.backward()
             self.optimizer.step()
-            if batch_idx % 100 == 0:
-                print('Train Epoch: {}\tLoss: {:.6f}'.format(batch_idx, loss.item()))
+            if batch_idx % 10 == 0:
+                print('Train num: {}\tLoss: {:.6f}'.format(batch_idx, loss.item()))
         output = output.cpu().detach().numpy()
+        output = output[0, 0, :, :]
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.imshow(output)
+        # plt.show()
+        plt.savefig(str(time())+".jpg")
+        plt.pause(2)  # 显示秒数
+        plt.close()
+
         t2=time()
         print("DCF_layer init end")
-        print("init time cost:",(t2-t1)/1000 , "s")
+        print("init time cost:",(t2-t1) , "s")
+        print("##########")
+
+    def search(self,feature_map):
+        t1 = time()
+        feature_map = feature_map[np.newaxis, :, :, :]
+        data = torch.from_numpy(feature_map)
+        data = data.permute(0, 3, 1, 2)
+        data = data.float().cuda()
+        output = self.dcf_model(data)
+        output = output.cpu().detach().numpy()
+        output = output[0, 0, :, :]
+        t2 = time()
+        return output
+
         

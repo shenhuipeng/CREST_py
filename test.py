@@ -8,7 +8,8 @@ from config_list import config_list
 from VGG13_user import init_vgg13
 from DCF_user import DCF_layer
 import os
-
+import matplotlib.pyplot as plt
+from time import time
 
 DATASET_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))+"/dataset"
 print(DATASET_PATH)
@@ -107,12 +108,34 @@ def gaussian_shaped_labels(sigma, sz,objSize):
     labels = np.exp(-alpha * (rs** 2 / sigma[0]**2 + cs**2 / sigma[1] ** 2))
     return labels
 
+def get_init_patch(feature_map,label,num):
+    fh,fw,fc = feature_map.shape
+    train_data = np.zeros((num,fh,fw,fc))
+    train_label = np.zeros((num,fh,fw))
+    train_data[0,:,:,:] = feature_map
+    train_label[0,:,:] = label
+    for i in range(1,num):
+        h_shift = np.random.randint(1,fh//5)
+        w_shift = np.random.randint(1,fw//5)
+        tmp = np.roll(feature_map, h_shift, axis=0)
+        train_data[i, :, :, :] = np.roll(tmp, w_shift, axis=1)
+        # ax = fig.add_subplot(111)
+        # ax.imshow(test_input[0,:,:,:])
+        # plt.show()
+        tmp = np.roll(label, h_shift, axis=0)
+        train_label[i, :, :] = np.roll(tmp, w_shift, axis=1)
+
+    return train_data, train_label
+
+        
+
+
 
 
 ################load data############################
 seq_len, gt, img_list = config_list('Dudek',DATASET_PATH)
 
-num_channels = 3
+num_channels = 64
 output_sigma_factor = 0.1
 cell_size=4
 
@@ -231,9 +254,11 @@ np.save("feature.npy",featurePCA)
 # ax.imshow(featurePCA)
 # plt.show()
 
-dcf_layer = DCF_layer(featurePCA,label)
+train_data, train_label  = get_init_patch(featurePCA,label,20)
 
-exit()
+dcf_layer = DCF_layer(train_data, train_label)
+
+
 #----------------online prediction------------------
 motion_sigma_factor=0.6
 
@@ -248,3 +273,54 @@ for  index in range(1,seq_len):
     #  im = imresize(im1, scale)   #  if scale!!!!
 
     patch = get_subwindow(frame, pos_h_w, window_h_w)
+    data = patch[np.newaxis, :, :, :]
+    data = torch.from_numpy(data)
+    data = data.permute(0, 3, 1, 2)
+    data = data.float().cuda()
+    print(data.shape)
+    feature = featureNet(data)
+    feature = feature.cpu()
+    feature = feature.permute(0, 2, 3, 1)
+    feature = feature.detach().numpy()
+
+    feature = feature[0, :, :, :]
+
+    hf, wf, cf = np.shape(feature)
+    if hf % 2 == 0 or wf % 2 == 0:
+        hf = hf - hf % 2 + 1
+        wf = wf - wf % 2 + 1
+        feature = cv2.resize(feature, (wf, hf))
+    hf, wf, cf = np.shape(feature)
+    window_feature = np.zeros(feature.shape)
+    for i in range(cf):
+        window_feature[:, :, i] = feature[:, :, i] * cos_window
+
+    matrix = np.reshape(window_feature, (hf * wf, cf))
+
+    pca = PCA(n_components=num_channels)
+    pca.fit(matrix)
+    coeff = pca.transform(matrix)
+    featurePCA = np.reshape(coeff, (hf, wf, -1))
+
+
+    # cv2.imshow("",featurePCA)
+    # cv2.waitKey(10)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # ax.imshow(featurePCA)
+    # plt.show()
+
+
+    predict_label = dcf_layer.search(featurePCA)
+    motion_sigma = target_sz1 * motion_sigma_factor
+    motion_map = gaussian_shaped_labels(motion_sigma, l1_patch_num, target_w_h)
+    response = predict_label * motion_map
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.imshow(response)
+    plt.savefig("/home/kamata/pshow/CREST_py/test-res/"+str(time()) + ".jpg")
+    # plt.show()
+
+    #plt.pause(1)  # 显示秒数
+    #plt.close()
+
