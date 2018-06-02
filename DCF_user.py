@@ -21,7 +21,7 @@ class DCF_conv(nn.Module):
         super(DCF_conv, self).__init__()
 
         padding_uesr = (size-1)//2
-        self.bn = nn.BatchNorm2d(num_channels)
+        #self.bn = nn.BatchNorm2d(num_channels)
         self.dcf = nn.Sequential(         # input shape (1, 128, 128)
             #nn.BatchNorm2d(num_channels),
             nn.Conv2d(
@@ -48,9 +48,10 @@ class DCF_conv(nn.Module):
 
 
 
+
     def forward(self, x):
 
-        x = self.bn(x)
+        #x = self.bn(x)
         output = self.dcf(x)+self.res1(x)+self.res2(x)
 
         #output = self.softmax2d(output)*10
@@ -59,6 +60,9 @@ class DCF_conv(nn.Module):
 
         return output
 
+model = DCF_conv(np.array([15,15]),3)
+
+print(model.state_dict())
 
 
 def test():
@@ -173,7 +177,7 @@ class DCF_layer():
         data = data.permute(0, 3, 1, 2)
         target = target.permute(0, 3, 1, 2)
 
-        for batch_idx in range(1000):
+        for batch_idx in range(100):
 
             data, target = data.float().cuda(), target.float().cuda()
 
@@ -193,7 +197,7 @@ class DCF_layer():
         ax = fig.add_subplot(111)
         ax.imshow(output)
         # plt.show()
-        plt.savefig(str(time())+".jpg")
+        #plt.savefig(str(time())+".jpg")
         plt.pause(2)  # 显示秒数
         plt.close()
 

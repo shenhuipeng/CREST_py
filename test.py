@@ -5,8 +5,10 @@ import torchvision
 from sklearn.decomposition import PCA
 
 from config_list import config_list
-from VGG13_user import init_vgg13
+from VGG16BN_user import init_vgg16
 from DCF_user import DCF_layer
+from add_noise import add_random_noise
+
 import os
 import matplotlib.pyplot as plt
 from time import time
@@ -108,16 +110,16 @@ def gaussian_shaped_labels(sigma, sz,objSize):
     labels = np.exp(-alpha * (rs** 2 / sigma[0]**2 + cs**2 / sigma[1] ** 2))
     return labels
 
-def get_init_patch(feature_map,label,num):
-    fh,fw,fc = feature_map.shape
+def get_init_batch(feature_map,label):
+    num, fh,fw,fc = feature_map.shape
     train_data = np.zeros((num,fh,fw,fc))
     train_label = np.zeros((num,fh,fw))
-    train_data[0,:,:,:] = feature_map
+    train_data[0,:,:,:] = feature_map[0,:,:,:]
     train_label[0,:,:] = label
     for i in range(1,num):
         h_shift = np.random.randint(1,fh//5)
         w_shift = np.random.randint(1,fw//5)
-        tmp = np.roll(feature_map, h_shift, axis=0)
+        tmp = np.roll(feature_map[i,:,:], h_shift, axis=0)
         train_data[i, :, :, :] = np.roll(tmp, w_shift, axis=1)
         # ax = fig.add_subplot(111)
         # ax.imshow(test_input[0,:,:,:])
@@ -126,6 +128,14 @@ def get_init_patch(feature_map,label,num):
         train_label[i, :, :] = np.roll(tmp, w_shift, axis=1)
 
     return train_data, train_label
+def get_patch_batch_with_noise(patch,num):
+    fh, fw, fc = patch.shape
+    batch_data = np.zeros((num, fh, fw, fc))
+    batch_data[0, :, :, :] = patch
+    for i in range(1,num):
+        batch_data[i,:,:,:] = patch# add_random_noise(patch)
+
+    return batch_data
 
         
 
@@ -135,11 +145,12 @@ def get_init_patch(feature_map,label,num):
 ################load data############################
 seq_len, gt, img_list = config_list('Dudek',DATASET_PATH)
 
-num_channels = 64
+num_channels = 3
 output_sigma_factor = 0.1
 cell_size=4
 
 scale = 3
+BATCH_NUM = 3
 
 #####################################################################
 result = np.zeros((seq_len, 4)).astype("int")
@@ -182,9 +193,9 @@ print("patch size:",patch.shape)
 # meanImg  = meanImg.astype("uint8")
 # print(meanImg)
 
-featureNet = init_vgg13().cuda()
+featureNet = init_vgg16().cuda()
 
-data = patch[np.newaxis,:,:,:]
+data = get_patch_batch_with_noise(patch,BATCH_NUM)
 data = torch.from_numpy(data)
 data = data.permute(0, 3, 1, 2)
 data = data.float().cuda()
@@ -194,29 +205,36 @@ output=output.cpu()
 output = output.permute(0, 2, 3, 1)
 output = output.detach().numpy()
 
-output = output[0,:,:,:]
 
 
-hf,wf,cf=np.shape(output)
-print("feature map h ,w, c:",hf,wf,cf)
+
+batch_num,hf,wf,cf=np.shape(output)
+print("feature map b, h ,w, c:",batch_num,hf,wf,cf)
 if hf % 2 == 0 or wf % 2 == 0:
     hf = hf - hf % 2 +1
     wf = wf - wf % 2 + 1
-    output = cv2.resize(output,(wf,hf))
+    output1 = np.zeros((batch_num,hf,wf,cf))
+    for i in range(batch_num):
+        output1[i,:,:,:] = cv2.resize(output[i,:,:,:],(wf,hf))
+output = output1
 
-hf,wf,cf=np.shape(output)
-print("feature map h ,w, c:",hf,wf,cf)
+batch_num,hf,wf,cf=np.shape(output)
+print("feature map b, h ,w, c:",batch_num,hf,wf,cf)
 #print(np.max(output),np.min(output))
 window_feature = np.zeros(output.shape)
 for i in range(cf):
-    window_feature[:,:,i]  = output[:,:,i] * cos_window
+    for j in range(batch_num):
+        window_feature[j,:,:,i]  = output[j,:,:,i] * cos_window
 
-matrix=np.reshape(window_feature,(hf*wf,cf))
+matrix=np.reshape(window_feature,(batch_num ,hf*wf,cf))
 
-#pca = PCA(n_components=num_channels)
-pca = PCA(n_components= num_channels)          ####################attention!!!111
-pca.fit(matrix)
-coeff =pca.transform(matrix)
+# pca = PCA(n_components=num_channels)
+# pca = PCA(n_components= num_channels)          ####################attention!!!111
+coeff = np.zeros((batch_num,hf*wf,num_channels))
+for i in range(batch_num):
+    pca = PCA(n_components=num_channels)
+    pca.fit(matrix[i,:,:])
+    coeff[i,:,:] =pca.transform(matrix[i,:,:])
 print("after pca",np.shape(coeff))
 
 #window_feature  =
@@ -244,17 +262,19 @@ label=gaussian_shaped_labels(output_sigma, l1_patch_num, target_w_h)
 
 ###########-------------------first frame initialization-----------
 numEpochs=4000
-featurePCA = np.reshape(coeff,(hf,wf,-1))
+featurePCA = np.reshape(coeff,(batch_num,hf,wf,-1))
 np.save("feature.npy",featurePCA)
 
-# import matplotlib.pyplot as plt
-# fig = plt.figure()
-#     # 第一个子图,按照默认配置
-# ax = fig.add_subplot(111)
-# ax.imshow(featurePCA)
-# plt.show()
 
-train_data, train_label  = get_init_patch(featurePCA,label,20)
+
+import matplotlib.pyplot as plt
+fig = plt.figure()
+    # 第一个子图,按照默认配置
+ax = fig.add_subplot(111)
+ax.imshow(featurePCA[0])
+plt.show()
+#exit()
+train_data, train_label  = get_init_batch(featurePCA,label)
 
 dcf_layer = DCF_layer(train_data, train_label)
 
@@ -318,9 +338,9 @@ for  index in range(1,seq_len):
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax.imshow(response)
-    plt.savefig("/home/kamata/pshow/CREST_py/test-res/"+str(time()) + ".jpg")
+    #plt.savefig("/home/kamata/pshow/CREST_py/test-res1/"+str(time()) + ".jpg")
     # plt.show()
 
-    #plt.pause(1)  # 显示秒数
-    #plt.close()
+    plt.pause(2)  # 显示秒数
+    plt.close()
 
