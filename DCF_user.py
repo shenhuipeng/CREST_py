@@ -60,9 +60,9 @@ class DCF_conv(nn.Module):
 
         return output
 
-model = DCF_conv(np.array([15,15]),3)
+#model = DCF_conv(np.array([15,15]),3)
 
-print(model.state_dict())
+#print(model.state_dict())
 
 
 def test():
@@ -152,21 +152,26 @@ def test():
 
 
 class DCF_layer():
-    def __init__(self,feature_map,label):
+    def __init__(self,feature_map,target_h_w,label):
         num, fh, fw, fc = feature_map.shape
         print("##########")
         print("Start init DCF_layer...")
         t1=time()
         print("feature map shape:", feature_map.shape)
         print("label shape:",label.shape)
-        size = np.array([fh, fw])
+        
+        th = np.ceil(target_h_w[0] / 2)
+        tw = np.ceil(target_h_w[1] / 2)
+        th = 2* th +1
+        tw = 2* tw +1
+        size = np.array([th, tw])
         #feature_map = feature_map[np.newaxis, :, :, :]
         label = label[:, :, :, np.newaxis]
 
         self.dcf_model = DCF_conv(size, fc)
-        #print(self.dcf_model)
+        print(self.dcf_model)
         self.model = self.dcf_model.cuda()
-        self.optimizer = optim.Adam(self.dcf_model.parameters(), lr=1e-4, weight_decay=1e-6)
+        self.optimizer = optim.Adam(self.dcf_model.parameters(), lr=1e-3, weight_decay=1e-5)
         self.loss_fn = nn.MSELoss(reduce=True, size_average=True)
 
         self.dcf_model.train()
@@ -177,7 +182,7 @@ class DCF_layer():
         data = data.permute(0, 3, 1, 2)
         target = target.permute(0, 3, 1, 2)
 
-        for batch_idx in range(100):
+        for batch_idx in range(1000):
 
             data, target = data.float().cuda(), target.float().cuda()
 
@@ -190,12 +195,12 @@ class DCF_layer():
             self.optimizer.step()
             if batch_idx % 10 == 0:
                 print('Train num: {}\tLoss: {:.6f}'.format(batch_idx, loss.item()))
-        output = output.cpu().detach().numpy()
-        output = output[0, 0, :, :]
+        sample = output.cpu().detach().numpy()
+        sample = sample[0, 0, :, :]
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.imshow(output)
+        ax.imshow(sample)
         # plt.show()
         #plt.savefig(str(time())+".jpg")
         plt.pause(2)  # 显示秒数
@@ -218,4 +223,111 @@ class DCF_layer():
         t2 = time()
         return output
 
+class DCF_layer_new():
+    def __init__(self,featureNet,image_gen,label_gen,target_h_w,train_num,cos_window=None):
+        
+        image_batch = next(image_gen)
+        label_batch = next(label_gen)
+        num, fh, fw, fc = image_batch.shape
+        
+        featureNet_input = torch.from_numpy(image_batch)
+        featureNet_input = featureNet_input.permute(0, 3, 1, 2)
+        featureNet_input = featureNet_input.float().cuda()
+        label_batch = (torch.from_numpy(label_batch))
+        label_batch = label_batch.permute(0, 3, 1, 2)
+        label_batch = label_batch.float().cuda()
+        featureNet_output = featureNet(featureNet_input)
+        
+        
+#         if cos_window != None:
+            
+#             window_feature = np.zeros(featureNet_output.shape)
+#             for i in range(cf):
+#                 for j in range(num):
+#                     window_feature[j, :, :, i] = featureNet_output[j, :, :, i] * cos_window
+#             matrix = np.reshape(window_feature, (batch_num, hf * wf, cf))
+#         else:
+#             matrix = np.reshape(featureNet_output, (batch_num, hf * wf, cf))
+#         coeff = np.zeros((batch_num, hf * wf, num_channels))
+#         for i in range(num):
+#             pca = PCA(n_components=num_channels)
+#             pca.fit(matrix[i, :, :])
+#         coeff[i, :, :] = pca.transform(matrix[i, :, :])
+#         print("after pca", np.shape(coeff))
+#         featurePCA = np.reshape(coeff, (batch_num, hf, wf, -1))        
+        
+        print("##########")
+        print("Start init DCF_layer...")
+        t1=time()
+        print("feature map shape:", featureNet_output.shape)
+        print("label shape:",label_batch.shape)
+        
+        th = np.ceil(target_h_w[0] / 2)
+        tw = np.ceil(target_h_w[1] / 2)
+        th = 2* th +1
+        tw = 2* tw +1
+        size = np.array([th, tw])
+
+        self.dcf_model = DCF_conv(size, 256)
+        print(self.dcf_model)
+        self.model = self.dcf_model.cuda()
+        self.optimizer = optim.Adam(self.dcf_model.parameters(), lr=1e-3, weight_decay=1e-5)
+        self.loss_fn = nn.MSELoss(reduce=True, size_average=True)
+
+        self.dcf_model.train()
+        
+        data, target = Variable(featureNet_output), Variable(label_batch)
+        self.optimizer.zero_grad()
+        output = self.dcf_model(data)
+        loss = self.loss_fn(output, target)  # + 1e-6*output.norm(2)
+        loss.backward()
+        self.optimizer.step()
+        
+        for i in range(1,train_num):
+            image_batch = next(image_gen)
+            label_batch = next(label_gen)
+            featureNet_input = torch.from_numpy(image_batch)
+            featureNet_input = featureNet_input.permute(0, 3, 1, 2)
+            featureNet_input = featureNet_input.float().cuda()
+            label_batch = (torch.from_numpy(label_batch))
+            label_batch = label_batch.permute(0, 3, 1, 2)
+            label_batch = label_batch.float().cuda()
+            featureNet_output = featureNet(featureNet_input)
+            data, target = Variable(featureNet_output), Variable(label_batch)
+            self.optimizer.zero_grad()
+            output = self.dcf_model(data)
+            self.optimizer.zero_grad()
+            output = self.dcf_model(data)
+            loss = self.loss_fn(output, target)  # + 1e-6*output.norm(2)
+            loss.backward()
+            self.optimizer.step()
+            if i % 10 == 0:
+                print('Train num: {}\tLoss: {:.6f}'.format(i, loss.item()))
+        sample = output.cpu().detach().numpy()
+        sample = sample[0, 0, :, :]
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.imshow(sample)
+        # plt.show()
+        #plt.savefig(str(time())+".jpg")
+        plt.pause(2)  # 显示秒数
+        plt.close()
+
+        t2=time()
+        print("DCF_layer init end")
+        print("init time cost:",(t2-t1) , "s")
+        print("##########")
+
+    def search(self,feature_map):
+        t1 = time()
+#         feature_map = feature_map[np.newaxis, :, :, :]
+#         data = torch.from_numpy(feature_map)
+#         data = data.permute(0, 3, 1, 2)
+#         data = data.float().cuda()
+        output = self.dcf_model(feature_map)
+        output = output.cpu().detach().numpy()
+        output = output[0, 0, :, :]
+        t2 = time()
+        return output
         

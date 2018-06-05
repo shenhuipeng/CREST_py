@@ -8,6 +8,8 @@ from config_list import config_list
 from VGG16BN_user import init_vgg16
 from DCF_user import DCF_layer
 from add_noise import add_random_noise
+from pre_process_data import get_init_patch_batch
+
 
 import os
 import matplotlib.pyplot as plt
@@ -28,6 +30,10 @@ def get_serach_window_size(target_h_w, scale):
         window_h_w[1] = int(target_h_w[0] * scale)
 
     window_h_w = window_h_w - (window_h_w % 2) + 1
+    if (window_h_w[0] // 4) % 2 == 0:
+        window_h_w[0] = window_h_w[0] + 4
+    if (window_h_w[1] // 4) % 2 == 0:
+        window_h_w[1] = window_h_w[1] + 4
 
     return window_h_w
 
@@ -150,7 +156,7 @@ output_sigma_factor = 0.1
 cell_size=4
 
 scale = 3
-BATCH_NUM = 3
+BATCH_NUM = 1
 
 #####################################################################
 result = np.zeros((seq_len, 4)).astype("int")
@@ -159,16 +165,20 @@ result[0,:] = gt[0,:]
 
 
 im = img_list[0]
+
 im_size = im.shape
 targetLoc = gt[0,:]
+# print(im[targetLoc])
+# exit()
 target_w_h = gt[0,2:4]
 target_h_w = np.array([target_w_h[1],target_w_h[0]])
 print("target_h_w:",target_h_w)
 window_h_w = get_serach_window_size(target_h_w, scale)
 print("window_h_w:",window_h_w)
 
-l1_patch_num = (np.ceil(window_h_w / cell_size)).astype("int")
-l1_patch_num = l1_patch_num-(l1_patch_num%2) + 1
+
+l1_patch_num = ((window_h_w // cell_size)).astype("int")
+#l1_patch_num = l1_patch_num-(l1_patch_num%2) + 1
 print("l1_patch_num:",l1_patch_num)
 cos_window = np.dot(np.transpose([np.hanning(l1_patch_num[0])]), [np.hanning(l1_patch_num[1])])
 print("cos_window:",cos_window.shape)
@@ -183,6 +193,15 @@ print("patch size:",patch.shape)
 # cv2.imshow("",patch)
 # cv2.waitKey(0)
 
+
+loc_y = window_h_w[0]//2 - target_h_w[0]//2
+loc_x = window_h_w[1]//2 - target_h_w[1]//2
+loc_h = target_h_w[0]
+loc_w = target_h_w[1]
+patch_batch = get_init_patch_batch(patch=patch,num=BATCH_NUM,loc=[loc_y,loc_x,loc_h,loc_w],with_special_patch=True)
+print("patch_batch.shape:",patch_batch.shape)
+
+
 #patch  = patch.astype("uint8")
 #meanImg = np.zeros(patch.shape)
 #meanImg[:,:,0] = patch[:,:,0]- np.average(patch[:,:,0])
@@ -195,7 +214,7 @@ print("patch size:",patch.shape)
 
 featureNet = init_vgg16().cuda()
 
-data = get_patch_batch_with_noise(patch,BATCH_NUM)
+data = patch_batch  #get_patch_batch_with_noise(patch,BATCH_NUM)
 data = torch.from_numpy(data)
 data = data.permute(0, 3, 1, 2)
 data = data.float().cuda()
@@ -210,13 +229,22 @@ output = output.detach().numpy()
 
 batch_num,hf,wf,cf=np.shape(output)
 print("feature map b, h ,w, c:",batch_num,hf,wf,cf)
-if hf % 2 == 0 or wf % 2 == 0:
-    hf = hf - hf % 2 +1
-    wf = wf - wf % 2 + 1
-    output1 = np.zeros((batch_num,hf,wf,cf))
-    for i in range(batch_num):
-        output1[i,:,:,:] = cv2.resize(output[i,:,:,:],(wf,hf))
-output = output1
+
+# if hf % 2 == 0 or wf % 2 == 0:
+#     hf = hf - hf % 2 +1
+#     wf = wf - wf % 2 + 1
+#     output1 = np.zeros((batch_num,hf,wf,cf))
+#     for i in range(batch_num):
+#         output1[i,:,:,:] = cv2.resize(output[i,:,:,:],(wf,hf))
+# else:
+#     output1 = output
+#output = output1
+# _h, _w = cos_window.shape
+# if output.shape != cos_window.shape:
+#     output1 = np.zeros((batch_num,hf,wf,cf))
+#     for i in range(batch_num):
+#         output1[i,:,:,:] = cv2.resize(output[i,:,:,:],(_h, _w))
+#     output = output1
 
 batch_num,hf,wf,cf=np.shape(output)
 print("feature map b, h ,w, c:",batch_num,hf,wf,cf)
@@ -224,7 +252,7 @@ print("feature map b, h ,w, c:",batch_num,hf,wf,cf)
 window_feature = np.zeros(output.shape)
 for i in range(cf):
     for j in range(batch_num):
-        window_feature[j,:,:,i]  = output[j,:,:,i] * cos_window
+        window_feature[j,:,:,i]  = output[j,:,:,i]  * cos_window
 
 matrix=np.reshape(window_feature,(batch_num ,hf*wf,cf))
 
@@ -267,17 +295,23 @@ np.save("feature.npy",featurePCA)
 
 
 
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 fig = plt.figure()
-    # 第一个子图,按照默认配置
 ax = fig.add_subplot(111)
 ax.imshow(featurePCA[0])
-plt.show()
-#exit()
+plt.pause(5)  # 显示秒数
+plt.close()
 train_data, train_label  = get_init_batch(featurePCA,label)
 
-dcf_layer = DCF_layer(train_data, train_label)
+dcf_layer = DCF_layer(train_data,target_sz1,train_label)
 
+
+# fig = plt.figure()
+# ax = fig.add_subplot(121)
+# ax.imshow(patch)
+#
+# plt.pause(2)  # 显示秒数
+# plt.close()
 
 #----------------online prediction------------------
 motion_sigma_factor=0.6
@@ -305,15 +339,15 @@ for  index in range(1,seq_len):
 
     feature = feature[0, :, :, :]
 
-    hf, wf, cf = np.shape(feature)
-    if hf % 2 == 0 or wf % 2 == 0:
-        hf = hf - hf % 2 + 1
-        wf = wf - wf % 2 + 1
-        feature = cv2.resize(feature, (wf, hf))
+    # hf, wf, cf = np.shape(feature)
+    # if hf % 2 == 0 or wf % 2 == 0:
+    #     hf = hf - hf % 2 + 1
+    #     wf = wf - wf % 2 + 1
+    #     feature = cv2.resize(feature, (wf, hf))
     hf, wf, cf = np.shape(feature)
     window_feature = np.zeros(feature.shape)
     for i in range(cf):
-        window_feature[:, :, i] = feature[:, :, i] * cos_window
+        window_feature[:, :, i] = feature[:, :, i]  * cos_window
 
     matrix = np.reshape(window_feature, (hf * wf, cf))
 
@@ -334,13 +368,14 @@ for  index in range(1,seq_len):
     predict_label = dcf_layer.search(featurePCA)
     motion_sigma = target_sz1 * motion_sigma_factor
     motion_map = gaussian_shaped_labels(motion_sigma, l1_patch_num, target_w_h)
-    response = predict_label * motion_map
+    response = predict_label   # * motion_map
     fig = plt.figure()
-    ax = fig.add_subplot(111)
+    ax = fig.add_subplot(121)
     ax.imshow(response)
     #plt.savefig("/home/kamata/pshow/CREST_py/test-res1/"+str(time()) + ".jpg")
     # plt.show()
-
-    plt.pause(2)  # 显示秒数
+    bx = fig.add_subplot(122)
+    bx.imshow(patch)
+    plt.pause(5)  # 显示秒数
     plt.close()
 

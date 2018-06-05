@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 from os import listdir
-
+import os
 def load_img_data(dir):
     # DATA_DIR = "/media/pshow/0EB217730EB21773/VOT_full/KCF_traker/bag/"
 
@@ -46,7 +46,7 @@ def config_list(seq_name, dataset_dir):
 
 
 
-# seq_len, gt, img_list = config_list('Dudek','/media/pshow/0EB217730EB21773/VOT_full/CREST-Release-master')
+# seq_len, gt, img_list = config_list('Skiing',os.path.dirname(os.path.dirname(os.path.abspath(__file__)))+"/dataset")
 # index = 0
 # #print(img_list)
 # while(index < seq_len):
