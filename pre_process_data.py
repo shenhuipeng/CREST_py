@@ -8,7 +8,10 @@ def get_init_patch_batch(patch,num,loc,with_random_noise=True, with_special_patc
     batch_data = np.zeros((num, fh, fw, fc)).astype("uint8")
     batch_data[0, :, :, :] = patch
     for i in range(1, num):
-        batch_data[i, :, :, :] =  add_random_noise(patch)
+        if i == num-1:
+            batch_data[i, :, :, :] =  add_random_noise(patch)
+        else:
+            batch_data[i, :, :, :] =  patch
     if with_special_patch:
         new1_batch = np.random.randint(0,255,size=[num, fh, fw, fc]).astype("uint8")
         new2_batch = np.random.randint(1, size=[num, fh, fw, fc]).astype("uint8")

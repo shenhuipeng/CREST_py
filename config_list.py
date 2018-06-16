@@ -46,7 +46,7 @@ def config_list(seq_name, dataset_dir):
 
 
 
-# seq_len, gt, img_list = config_list('Skiing',os.path.dirname(os.path.dirname(os.path.abspath(__file__)))+"/dataset")
+# seq_len, gt, img_list = config_list('Bird1',os.path.dirname(os.path.dirname(os.path.abspath(__file__)))+"/dataset")
 # index = 0
 # #print(img_list)
 # while(index < seq_len):
