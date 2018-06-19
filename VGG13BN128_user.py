@@ -8,8 +8,9 @@ import numpy as np
 import os
 import copy
 class CNN(nn.Module):
-    def __init__(self):
+    def __init__(self,cos_window=None):
         super(CNN, self).__init__()
+        self.cos_window = torch.from_numpy(cos_window).float().cuda()
         self.features = nn.Sequential(         # input shape (1, 128, 128)
             nn.Conv2d(
                 in_channels=3,              # input height
@@ -47,6 +48,7 @@ class CNN(nn.Module):
 
     def forward(self, x):
         output = self.features(x)
+        output[:, :] = output[:, :] * self.cos_window
 
         return output
 
@@ -72,8 +74,8 @@ def transfer_weights(model_from, model_to):
 # print(net2.state_dict())
 
 
-def init_vgg13():
+def init_vgg13(cos_window):
     net1 = torchvision.models.vgg13_bn(pretrained=True, )
-    net2 = CNN()
+    net2 = CNN(cos_window)
     transfer_weights(net1, net2)
     return net2
